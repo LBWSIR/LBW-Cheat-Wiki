@@ -1,0 +1,1 @@
+import{_ as o,o as r,c as n,ag as l}from"./chunks/framework.DXGyWiRo.js";const h=JSON.parse('{"title":"🌐 VPN 与 加速器","description":"","frontmatter":{},"headers":[],"relativePath":"vpn.md","filePath":"vpn.md"}'),a={name:"vpn.md"};function s(e,t,i,p,g,_){return r(),n("div",null,[...t[0]||(t[0]=[l("",17)])])}const u=o(a,[["render",s]]);export{h as __pageData,u as default};

@@ -1,0 +1,1 @@
+import{_ as t,o as e,c as l,ag as o}from"./chunks/framework.DXGyWiRo.js";const p=JSON.parse('{"title":"售后规则说明","description":"","frontmatter":{},"headers":[],"relativePath":"rules.md","filePath":"rules.md"}'),r={name:"rules.md"};function i(n,a,s,u,c,d){return e(),l("div",null,[...a[0]||(a[0]=[o("",10)])])}const _=t(r,[["render",i]]);export{p as __pageData,_ as default};
