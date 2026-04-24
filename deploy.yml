@@ -1,1 +1,32 @@
+name: Deploy GitBook
 
+on:
+  push:
+    branches:
+      - main  # 如果你的主分支叫 master，请修改此处
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '10' # GitBook 需要旧版 Node 环境
+
+      - name: Install GitBook CLI
+        run: |
+          npm install -g gitbook-cli
+          gitbook install
+
+      - name: Build GitBook
+        run: gitbook build
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _book # GitBook 生成的静态文件夹
+          branch: gh-pages # 部署到这个分支
