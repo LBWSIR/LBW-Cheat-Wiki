@@ -1,6 +1,20 @@
 // .vitepress/config.mjs
-export default {
-  title: "LBW教程网", // 浏览器标签页标题
+import { defineConfig } from 'vitepress'
+
+export default defineConfig({
+  // 忽略构建时的额外文件（old flow 中的无扩展名图片等）
+  vite: {
+    server: {
+      watch: {
+        ignored: ['**/old flow/**', '**/node_modules/**']
+      }
+    },
+    build: {
+      rollupOptions: {}
+    }
+  },
+
+  title: "LBW教程网",
   head: [
     // --- 1. 动态噪点水印与防选中 CSS ---
     ['style', {}, `
@@ -43,7 +57,7 @@ export default {
     logo: '/logo.png', // 左上角的小图片 /
     siteTitle: 'LBW教程网', // 网站左上角标题
     
-    // --- 融合后的搜索栏配置开始 ---
+    // --- 搜索栏配置 ---
     search: {
       provider: 'local',
       options: {
@@ -64,11 +78,10 @@ export default {
         }
       }
     },
-// --- 侧边栏配置：实现 CS2 归属于 售后规则 ---
+// --- 侧边栏配置 ---
     sidebar: [
       {
         text: 'Wiki主页', 
-        collapsed: false,
         items: [
           { 
             text: '售后规则 (点击查看)', 
@@ -78,28 +91,88 @@ export default {
                 text: 'CS2教程', 
                 link: '/cs2', 
                 items: [
-                  { text: 'NIX 详细教程', link: '/cs2/nix' } ,// 在 CS2 分页内部
-                  { text: 'icheat 详细教程', link: '/cs2/free icheat' } // 在 CS2 分页内部
+                  { text: 'NIX 详细教程', link: '/cs2/nix' },
+                  { text: 'iCheat 详细教程', link: '/cs2/free icheat' },
+                  { text: 'Midnight 教程', link: '/cs2/midnight' },
+                  {
+                    text: 'FAC/Expander 教程',
+                    link: '/cs2/expandera',
+                    collapsed: true,
+                    items: [
+                      { text: 'Expandera 疑难杂症', link: '/cs2/expandera_troubleshoot' },
+                      { text: 'Fatality 参数教程', link: '/cs2/expandera_fatality' }
+                    ]
+                  }
                 ]
               },
-              // --- 分支二：元神教程 ---
+              // --- 原神教程 ---
               {
                 text: '原神教程',
-                link: '/yuanshen' ,
+                link: '/yuanshen',
                 items: [
-                  { text: '原神Unicore', link: '/genshin/unicore' }, // 这里的路径根据你实际文件夹修改
-                  { text: '原神Akebi', link: '/genshin/akebi' }
+                  { text: 'Unicore', link: '/genshin/unicore' },
+                  {
+                    text: 'Akebi',
+                    link: '/genshin/akebi',
+                    collapsed: true, // 关键：这一行就是实现折叠的开关！
+                    items: [
+                      { text: 'Akebi 常见问题', link: '/genshin/akebi_faq' },
+                      { text: 'Akebi 报错', link: '/genshin/akebi_errors' },
+                      { text: 'Akebi 瞬移文件', link: '/genshin/akebi_teleport' }
+                    ]
+                  }
                 ]
-                               
               },
-              // --- 分支三：VPN教程 ---
+              // --- VPN教程 ---
               {
                 text: 'VPN教程',
-                link: '/vpn' ,
+                link: '/vpn',
                 items: [
-                  { text: 'PC', link: '/vpn/pc' }, // 这里的路径根据你实际文件夹修改
+                  { text: 'PC', link: '/vpn/pc' },
                   { text: '安卓', link: '/vpn/android' },
-                  { }
+                  { text: 'iOS', link: '/vpn/ios' }
+                ]
+              },
+              // --- GTA5教程 ---
+              {
+                text: 'GTA5教程',
+                link: '/gta5/install',
+                items: [
+                  { text: 'Alpha 使用教程', link: '/gta5/alpha' }
+                ]
+              },
+              // --- 崩坏：星穹铁道 ---
+              {
+                text: '崩坏：星穹铁道',
+                link: '/starrail',
+                items: [
+                  {
+                    text: 'Niluli 教程',
+                    link: '/starrail/niluli',
+                    collapsed: true,
+                    items: [
+                      { text: 'Niluli 启动教程', link: '/starrail/niluli_start' },
+                      { text: 'Niluli 功能图', link: '/starrail/niluli_features' },
+                      { text: 'Niluli 常见问题', link: '/starrail/niluli_faq' }
+                    ]
+                  }
+                ]
+              },
+              // --- 鸣朝教程 ---
+              {
+                text: '鸣朝教程',
+                link: '/mingchao',
+                items: [
+                  {
+                    text: 'Meow 教程',
+                    link: '/mingchao/meow',
+                    collapsed: true,
+                    items: [
+                      { text: 'Meow 传送教程', link: '/mingchao/meow_teleport' },
+                      { text: 'Meow 功能图', link: '/mingchao/meow_features' },
+                      { text: 'Meow 常见问题', link: '/mingchao/meow_faq' }
+                    ]
+                  }
                 ]
               }
             ]
@@ -109,3 +182,4 @@ export default {
     ]
   }
 }
+)

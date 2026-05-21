@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as o}from"./chunks/framework.DXGyWiRo.js";const m=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"vpn/ios.md","filePath":"vpn/ios.md"}'),a={name:"vpn/ios.md"};function s(n,r,c,i,p,_){return t(),o("div")}const f=e(a,[["render",s]]);export{m as __pageData,f as default};

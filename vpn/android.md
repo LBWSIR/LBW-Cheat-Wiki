@@ -16,23 +16,23 @@
 
 **（找卢姥爷提供的订阅链接使用！！）**
 
-![勾选组件](/public/vpn/android1.png)
+![勾选组件](/images/vpn/android1.png)
 
 导入之后会显示添加配置文件 显示配置文件保存成功就可以点击中间logo连接
 
-![点击安装](/public/vpn/android2.png)
+![点击安装](/images/vpn/android2.png)
 
 第一次使用会显示网络连接请求 点击确定即可 等待中间的logo显示绿色且显示已连接 
 
 您就可以点击右下角的代理 可以选择你自己喜欢的节点 在选择好您想要的节点之后 返回
 
-![完成安装](/public/vpn/android3.png)
+![完成安装](/images/vpn/android3.png)
 
 如果您需要更新节点订阅 建议每次使用都更新一次 
 
 您可以点击主页的订阅 选择更新订阅手动更新 显示更新成功即可
 
-![初始化设置](/public/vpn/android4.png)
+![初始化设置](/images/vpn/android4.png)
 
 ---
 

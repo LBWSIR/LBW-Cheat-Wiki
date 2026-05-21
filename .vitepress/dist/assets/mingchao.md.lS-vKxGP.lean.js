@@ -1,0 +1,1 @@
+import{_ as e,o as t,c as o,ag as r}from"./chunks/framework.DXGyWiRo.js";const p=JSON.parse('{"title":"鸣朝 教程","description":"","frontmatter":{},"headers":[],"relativePath":"mingchao.md","filePath":"mingchao.md"}'),c={name:"mingchao.md"};function i(s,a,l,n,_,m){return t(),o("div",null,[...a[0]||(a[0]=[r("",5)])])}const d=e(c,[["render",i]]);export{p as __pageData,d as default};

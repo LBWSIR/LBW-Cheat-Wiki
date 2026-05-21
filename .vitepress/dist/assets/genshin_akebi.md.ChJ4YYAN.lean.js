@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as a}from"./chunks/framework.DXGyWiRo.js";const m=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"genshin/akebi.md","filePath":"genshin/akebi.md"}'),n={name:"genshin/akebi.md"};function s(r,i,o,c,p,_){return t(),a("div")}const f=e(n,[["render",s]]);export{m as __pageData,f as default};

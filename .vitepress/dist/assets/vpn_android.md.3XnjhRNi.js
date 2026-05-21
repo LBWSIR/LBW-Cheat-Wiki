@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as a}from"./chunks/framework.DXGyWiRo.js";const m=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"vpn/android.md","filePath":"vpn/android.md"}'),n={name:"vpn/android.md"};function r(o,d,s,c,i,p){return t(),a("div")}const f=e(n,[["render",r]]);export{m as __pageData,f as default};

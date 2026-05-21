@@ -20,4 +20,7 @@
 ---
 
 ### 📘 快速导航
-* **[NIX 详细教程](/cs2/nix.md)**：适合追求性价比的玩家，包含全套调教方案。
+* **[NIX 详细教程](/cs2/nix)**：适合追求性价比的玩家，包含全套调教方案。
+* **[Midnight 教程](/cs2/midnight)**：高性能付费菜单，适合追求极致体验的玩家。
+* **[FAC/Expandera 教程](/cs2/expandera)**：Expandera 注入器使用流程。
+* **[iCheat 详细教程](/cs2/free%20icheat)**：免费注入方案，适合入门使用。

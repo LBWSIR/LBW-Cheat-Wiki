@@ -1,1 +1,0 @@
-import{_ as e,o as n,c as t}from"./chunks/framework.DXGyWiRo.js";const m=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"genshin/unicore.md","filePath":"genshin/unicore.md"}'),r={name:"genshin/unicore.md"};function o(a,c,s,i,p,_){return n(),t("div")}const f=e(r,[["render",o]]);export{m as __pageData,f as default};

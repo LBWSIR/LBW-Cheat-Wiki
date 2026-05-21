@@ -1,0 +1,1 @@
+import{_ as a,o as t,c as o,ag as r}from"./chunks/framework.DXGyWiRo.js";const g=JSON.parse('{"title":"🔫 CS2 产品介绍与进阶教程","description":"","frontmatter":{},"headers":[],"relativePath":"cs2.md","filePath":"cs2.md"}'),s={name:"cs2.md"};function c(n,e,l,i,d,h){return t(),o("div",null,[...e[0]||(e[0]=[r("",10)])])}const m=a(s,[["render",c]]);export{g as __pageData,m as default};
