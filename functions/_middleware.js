@@ -1,8 +1,8 @@
-/**
- * Cloudflare Pages Functions - 管理员后台（安全加固版）
+﻿/**
+ * Cloudflare Pages Functions - 管理员后台（D1 版）
+ * - 使用 D1 替代 KV，免费额度 10 万次写入/天
  * - Cookie 使用随机 token 而非明文密码
  * - 登录频率限制：3 次错误后逐级锁定时长
- * - 锁定期间页面内显示倒计时，不跳转
  */
 
 export async function onRequest(context) {
@@ -24,18 +24,20 @@ export async function onRequest(context) {
     }
 
     // 检查是否被锁定
-    const lockKey = `lock:${clientIP}`;
-    const lockData = await env.VISITOR_LOG.get(lockKey, "text");
-    if (lockData) {
-      const lock = JSON.parse(lockData);
-      if (Date.now() < lock.until) {
-        const remainSec = Math.ceil((lock.until - Date.now()) / 1000);
-        return new Response(renderLoginPage("locked", remainSec), {
-          headers: { "Content-Type": "text/html; charset=utf-8" }
-        });
-      }
-      // 锁定期已过，清除
-      await env.VISITOR_LOG.delete(lockKey);
+    const lock = await env.DB.prepare(
+      "SELECT * FROM rate_limits WHERE ip = ?"
+    ).bind(clientIP).first();
+
+    if (lock && lock.locked_until > 0 && Date.now() < lock.locked_until) {
+      const remainSec = Math.ceil((lock.locked_until - Date.now()) / 1000);
+      return new Response(renderLoginPage("locked", remainSec), {
+        headers: { "Content-Type": "text/html; charset=utf-8" }
+      });
+    }
+
+    // 锁定期已过，清除
+    if (lock && lock.locked_until > 0) {
+      await env.DB.prepare("DELETE FROM rate_limits WHERE ip = ?").bind(clientIP).run();
     }
 
     // 手动解析 POST body
@@ -46,16 +48,14 @@ export async function onRequest(context) {
 
     // 密码正确
     if (pwd === env.ADMIN_KEY) {
-      await env.VISITOR_LOG.delete(`fail:${clientIP}`);
-      await env.VISITOR_LOG.delete(lockKey);
+      await env.DB.prepare("DELETE FROM rate_limits WHERE ip = ?").bind(clientIP).run();
 
       const token = generateToken();
       const expires = remember ? 7 * 24 * 60 * 60 : 24 * 60 * 60;
 
-      await env.VISITOR_LOG.put(`token:${token}`, JSON.stringify({
-        expires: Date.now() + expires * 1000,
-        ip: clientIP,
-      }), { expirationTtl: expires });
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO admin_tokens (token, ip, expires) VALUES (?, ?, ?)"
+      ).bind(token, clientIP, Date.now() + expires * 1000).run();
 
       return new Response(null, {
         status: 302,
@@ -67,25 +67,25 @@ export async function onRequest(context) {
     }
 
     // 密码错误 → 记录失败次数
-    const failKey = `fail:${clientIP}`;
-    const failRaw = await env.VISITOR_LOG.get(failKey, "text");
-    let fails = failRaw ? JSON.parse(failRaw) : { count: 0, firstFail: 0 };
+    let fails = lock || { ip: clientIP, fail_count: 0, first_fail_at: 0 };
 
-    if (Date.now() - fails.firstFail > 3600000) {
-      fails = { count: 0, firstFail: Date.now() };
+    if (Date.now() - fails.first_fail_at > 3600000) {
+      fails.fail_count = 0;
+      fails.first_fail_at = Date.now();
     }
-    if (fails.firstFail === 0) fails.firstFail = Date.now();
+    if (fails.first_fail_at === 0) fails.first_fail_at = Date.now();
 
-    fails.count += 1;
+    fails.fail_count += 1;
 
-    // 渐进式锁定：第 1 次 10 分钟，第 2 次 30 分钟，第 3 次+ 24 小时
+    // 渐进式锁定
     const LOCK_DURATIONS = [10, 30, 1440]; // 分钟
-    const idx = Math.min(fails.count - 1, LOCK_DURATIONS.length - 1);
+    const idx = Math.min(fails.fail_count - 1, LOCK_DURATIONS.length - 1);
     const lockMinutes = LOCK_DURATIONS[idx];
     const lockUntil = Date.now() + lockMinutes * 60000;
 
-    await env.VISITOR_LOG.put(failKey, JSON.stringify(fails), { expirationTtl: 86400 });
-    await env.VISITOR_LOG.put(lockKey, JSON.stringify({ until: lockUntil, count: fails.count }), { expirationTtl: 86400 });
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO rate_limits (ip, fail_count, first_fail_at, locked_until) VALUES (?, ?, ?, ?)"
+    ).bind(clientIP, fails.fail_count, fails.first_fail_at, lockUntil).run();
 
     return new Response(renderLoginPage("wrong", lockMinutes * 60), {
       headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -95,7 +95,9 @@ export async function onRequest(context) {
   // ========== 退出登录 ==========
   if (url.pathname === "/__logout") {
     const token = getCookie(request, "admin_token");
-    if (token) await env.VISITOR_LOG.delete(`token:${token}`);
+    if (token) {
+      await env.DB.prepare("DELETE FROM admin_tokens WHERE token = ?").bind(token).run();
+    }
     return new Response(null, {
       status: 302,
       headers: {
@@ -105,22 +107,23 @@ export async function onRequest(context) {
     });
   }
 
-  // ========== 日志页面（需登录） ==========
+  // ========== 日志页面 ==========
   if (url.pathname === "/__logs") {
     const check = await checkAuth(request, env);
     if (!check.ok) return redirectToLogin();
-    const raw = await env.VISITOR_LOG.get("log_entries", "text");
-    const entries = raw ? JSON.parse(raw) : [];
-    return new Response(renderLogPage(entries), {
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM visitors ORDER BY id DESC LIMIT 500"
+    ).all();
+    return new Response(renderLogPage(results), {
       headers: { "Content-Type": "text/html; charset=utf-8" }
     });
   }
 
-  // ========== 清除日志（需登录） ==========
+  // ========== 清除日志 ==========
   if (url.pathname === "/__clear") {
     const check = await checkAuth(request, env);
     if (!check.ok) return redirectToLogin();
-    await env.VISITOR_LOG.put("log_entries", JSON.stringify([]));
+    await env.DB.prepare("DELETE FROM visitors").run();
     return Response.redirect("/__logs", 302);
   }
 
@@ -129,19 +132,20 @@ export async function onRequest(context) {
   if (path.startsWith("/__")) return next();
 
   const rawUA = request.headers.get("User-Agent") || "";
+  const cf = request.cf || {};
   const visitor = {
     time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
     ip: clientIP,
-    country: request.cf?.country || "unknown",
-    city: request.cf?.city || "unknown",
-    colo: request.cf?.colo || "unknown",
-    asn: request.cf?.asn || 0,
+    country: cf.country || "unknown",
+    city: cf.city || "unknown",
+    colo: cf.colo || "unknown",
+    asn: cf.asn || 0,
     path: path + url.search,
     method: request.method,
     ua: parseUA(rawUA),
     referer: (request.headers.get("Referer") || "").slice(0, 200),
   };
-  context.waitUntil(saveLog(env.VISITOR_LOG, visitor));
+  context.waitUntil(saveLog(env.DB, visitor));
 
   return next();
 }
@@ -150,11 +154,12 @@ export async function onRequest(context) {
 async function checkAuth(request, env) {
   const token = getCookie(request, "admin_token");
   if (!token) return { ok: false };
-  const raw = await env.VISITOR_LOG.get(`token:${token}`, "text");
-  if (!raw) return { ok: false };
-  const data = JSON.parse(raw);
-  if (Date.now() > data.expires) {
-    await env.VISITOR_LOG.delete(`token:${token}`);
+  const row = await env.DB.prepare(
+    "SELECT * FROM admin_tokens WHERE token = ?"
+  ).bind(token).first();
+  if (!row) return { ok: false };
+  if (Date.now() > row.expires) {
+    await env.DB.prepare("DELETE FROM admin_tokens WHERE token = ?").bind(token).run();
     return { ok: false };
   }
   return { ok: true };
@@ -198,26 +203,26 @@ function parseUA(ua) {
   return parts.join(" / ");
 }
 
-async function saveLog(kv, entry) {
-  const MAX_ENTRIES = 500;
-  const raw = await kv.get("log_entries", "text");
-  let entries = raw ? JSON.parse(raw) : [];
-  entries.unshift(entry);
-  if (entries.length > MAX_ENTRIES) entries = entries.slice(0, MAX_ENTRIES);
-  await kv.put("log_entries", JSON.stringify(entries));
+async function saveLog(db, entry) {
+  try {
+    await db.prepare(
+      "INSERT INTO visitors (time, ip, country, city, colo, asn, path, method, ua, referer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(
+      entry.time, entry.ip, entry.country, entry.city, entry.colo,
+      entry.asn, entry.path, entry.method, entry.ua, entry.referer
+    ).run();
+  } catch (e) {
+    console.error("D1 insert error:", e);
+  }
 }
 
-// ========== 登录页面（支持倒计时） ==========
+// ========== 登录页面 ==========
 function renderLoginPage(errorType, lockSeconds) {
-  // 计算初始显示值
   const totalSec = Number(lockSeconds) || 0;
   const initMin = Math.floor(totalSec / 60);
   const initSec = totalSec % 60;
-  const initDisplay = totalSec > 0
-    ? `${initMin} 分 ${initSec} 秒`
-    : "";
+  const initDisplay = totalSec > 0 ? `${initMin} 分 ${initSec} 秒` : "";
 
-  // 错误消息
   let msg = "";
   let showTimer = false;
   if (errorType === "wrong") {
@@ -235,7 +240,6 @@ function renderLoginPage(errorType, lockSeconds) {
        </div>`
     : "";
 
-  // 是否禁用表单
   const disabled = showTimer && totalSec > 0 ? "disabled" : "";
 
   return `<!DOCTYPE html>
@@ -250,20 +254,16 @@ function renderLoginPage(errorType, lockSeconds) {
   .login-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 40px; width: 390px; }
   .login-box h2 { color: #c9d1d9; text-align: center; margin-bottom: 8px; font-size: 22px; }
   .login-box .sub { color: #8b949e; text-align: center; margin-bottom: 28px; font-size: 13px; }
-
   .error-msg { background: #3d1d1d; border: 1px solid #f85149; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #f85149; font-size: 13px; }
   .countdown { font-family: "SF Mono", "Consolas", monospace; font-size: 22px; font-weight: 700; color: #ffa198; white-space: nowrap; min-width: 90px; text-align: right; }
-
   .input-group { margin-bottom: 18px; }
   .input-group label { display: block; color: #c9d1d9; margin-bottom: 6px; font-size: 14px; }
   .input-group input { width: 100%; padding: 10px 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; font-size: 14px; outline: none; transition: border-color .2s; }
   .input-group input:focus { border-color: #58a6ff; }
   .input-group input:disabled { opacity: 0.4; cursor: not-allowed; }
-
   .bottom-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; font-size: 13px; }
   .bottom-row label { color: #8b949e; cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .bottom-row input[type=checkbox] { accent-color: #58a6ff; }
-
   .login-btn { width: 100%; padding: 12px; background: #238636; border: none; border-radius: 8px; color: #fff; font-size: 15px; cursor: pointer; font-weight: 600; transition: background .2s; }
   .login-btn:hover { background: #2ea043; }
   .login-btn:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
@@ -295,7 +295,6 @@ function renderLoginPage(errorType, lockSeconds) {
         if (remaining <= 0) {
           el.textContent = "已解除";
           el.style.color = "#3fb950";
-          // 1.5 秒后刷新页面恢复表单
           setTimeout(function(){ location.href = "/__login"; }, 1500);
           return;
         }
