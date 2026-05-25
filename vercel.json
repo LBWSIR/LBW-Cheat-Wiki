@@ -1,0 +1,4 @@
+﻿{
+  "outputDirectory": ".vitepress/dist",
+  "buildCommand": "npx vitepress build"
+}
