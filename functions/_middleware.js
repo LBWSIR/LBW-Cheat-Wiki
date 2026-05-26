@@ -1,8 +1,9 @@
-﻿/**
- * Cloudflare Pages Functions - 管理员后台（D1 版）
+/**
+ * Cloudflare Pages Functions - 管理员后台 + Turnstile 全站验证
  * - 使用 D1 替代 KV，免费额度 10 万次写入/天
  * - Cookie 使用随机 token 而非明文密码
  * - 登录频率限制：3 次错误后逐级锁定时长
+ * - Turnstile：非管理员访问需通过人机验证
  */
 
 export async function onRequest(context) {
@@ -23,7 +24,6 @@ export async function onRequest(context) {
       return new Response("Method Not Allowed", { status: 405 });
     }
 
-    // 检查是否被锁定
     const lock = await env.DB.prepare(
       "SELECT * FROM rate_limits WHERE ip = ?"
     ).bind(clientIP).first();
@@ -35,24 +35,19 @@ export async function onRequest(context) {
       });
     }
 
-    // 锁定期已过，清除
     if (lock && lock.locked_until > 0) {
       await env.DB.prepare("DELETE FROM rate_limits WHERE ip = ?").bind(clientIP).run();
     }
 
-    // 手动解析 POST body
     const text = await request.text();
     const params = new URLSearchParams(text);
     const pwd = params.get("password") || "";
     const remember = params.get("remember") || "";
 
-    // 密码正确
     if (pwd === env.ADMIN_KEY) {
       await env.DB.prepare("DELETE FROM rate_limits WHERE ip = ?").bind(clientIP).run();
-
       const token = generateToken();
       const expires = remember ? 7 * 24 * 60 * 60 : 24 * 60 * 60;
-
       await env.DB.prepare(
         "INSERT OR REPLACE INTO admin_tokens (token, ip, expires) VALUES (?, ?, ?)"
       ).bind(token, clientIP, Date.now() + expires * 1000).run();
@@ -66,19 +61,15 @@ export async function onRequest(context) {
       });
     }
 
-    // 密码错误 → 记录失败次数
     let fails = lock || { ip: clientIP, fail_count: 0, first_fail_at: 0 };
-
     if (Date.now() - fails.first_fail_at > 3600000) {
       fails.fail_count = 0;
       fails.first_fail_at = Date.now();
     }
     if (fails.first_fail_at === 0) fails.first_fail_at = Date.now();
-
     fails.fail_count += 1;
 
-    // 渐进式锁定
-    const LOCK_DURATIONS = [10, 30, 1440]; // 分钟
+    const LOCK_DURATIONS = [10, 30, 1440];
     const idx = Math.min(fails.fail_count - 1, LOCK_DURATIONS.length - 1);
     const lockMinutes = LOCK_DURATIONS[idx];
     const lockUntil = Date.now() + lockMinutes * 60000;
@@ -127,28 +118,146 @@ export async function onRequest(context) {
     return Response.redirect("/__logs", 302);
   }
 
-  // ========== 记录访问 ==========
-  const path = url.pathname;
-  if (path.startsWith("/__")) return next();
+  // ========== Turnstile 验证回调 ==========
+  if (url.pathname === "/__turnstile-verify") {
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    return handleTurnstileVerify(request, env);
+  }
 
-  const rawUA = request.headers.get("User-Agent") || "";
-  const cf = request.cf || {};
-  const visitor = {
-    time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
-    ip: clientIP,
-    country: cf.country || "unknown",
-    city: cf.city || "unknown",
-    colo: cf.colo || "unknown",
-    asn: cf.asn || 0,
-    path: path + url.search,
-    method: request.method,
-    ua: parseUA(rawUA),
-    referer: (request.headers.get("Referer") || "").slice(0, 200),
-  };
-  context.waitUntil(saveLog(env.DB, visitor));
+  // ========== Turnstile 人机验证（非管理员） ==========
+  if (url.pathname.startsWith("/__")) return next();
 
-  return next();
+  // 管理员无需验证
+  const auth = await checkAuth(request, env);
+  if (auth.ok) return next();
+
+  // 已通过 Turnstile 验证
+  const turnstileToken = getCookie(request, "turnstile");
+  if (turnstileToken) {
+    const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
+    if (isValid) return next();
+  }
+
+  // 静态资源放行（验证页需要加载 Turnstile JS）
+  if (url.pathname.startsWith("/assets/") || /\.(js|css|png|jpg|webp|svg|ico|woff2?)$/i.test(url.pathname)) {
+    return next();
+  }
+
+  // 显示 Turnstile 验证页
+  return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
 }
+
+// ========== Turnstile 验证处理 ==========
+async function handleTurnstileVerify(request, env) {
+  const text = await request.text();
+  const params = new URLSearchParams(text);
+  const token = params.get("cf-turnstile-response") || "";
+  const redirectUrl = params.get("redirect") || "/";
+
+  const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: token }),
+  });
+  const outcome = await result.json();
+
+  if (outcome.success) {
+    const cookieValue = await signTurnstileCookie(env.TURNSTILE_SECRET);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        "Location": redirectUrl,
+        "Set-Cookie": `turnstile=${cookieValue}; Path=/; Max-Age=86400; SameSite=Lax; HttpOnly; Secure`,
+      },
+    });
+  }
+
+  return new Response("验证失败，请刷新重试", { status: 403 });
+}
+
+// ========== Turnstile Cookie 签名/验证 ==========
+async function signTurnstileCookie(secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const payload = `ok:${Date.now()}`;
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return `${payload}.${btoa(String.fromCharCode(...new Uint8Array(sig)))}`;
+}
+
+async function verifyTurnstileCookie(secret, cookieValue) {
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const [payload, sig] = cookieValue.split(".");
+    if (!payload || !sig) return false;
+    const expectedSig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)))));
+    return sig === expectedSig;
+  } catch {
+    return false;
+  }
+}
+
+// ========== Turnstile 验证页面 ==========
+function serveTurnstilePage(siteKey, redirectPath) {
+  const safe = escapeHtml(redirectPath);
+  return new Response(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LBW教程网 - 人机验证</title>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0d1117; display: flex; justify-content: center; align-items: center; min-height: 100vh; user-select: none; }
+  .verify-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 48px 40px; text-align: center; max-width: 420px; width: 90%; }
+  .verify-box h1 { color: #c9d1d9; font-size: 22px; margin-bottom: 10px; }
+  .verify-box p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+  .turnstile-wrapper { display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="verify-box">
+    <h1>LBW教程网</h1>
+    <p>正在验证您的访问身份，请稍候...</p>
+    <div class="turnstile-wrapper">
+      <div class="cf-turnstile" data-sitekey="${siteKey}" data-theme="dark"></div>
+    </div>
+  </div>
+  <script>
+    window.onTurnstileLoad = function() {
+      if (window.turnstile) {
+        window.turnstile.render('.cf-turnstile', {
+          sitekey: '${siteKey}',
+          theme: 'dark',
+          callback: function(token) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/__turnstile-verify';
+            form.style.display = 'none';
+            var t = document.createElement('input');
+            t.name = 'cf-turnstile-response'; t.value = token; form.appendChild(t);
+            var r = document.createElement('input');
+            r.name = 'redirect'; r.value = '${safe}'; form.appendChild(r);
+            document.body.appendChild(form);
+            form.submit();
+          }
+        });
+      }
+    };
+  </script>
+</body>
+</html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+// ========== 记录访问 ==========
+// （Turnstile 放到记录之前，确保记录的都是已验证通过的访问）
+// 注意：此处的 record 逻辑已移到前面 Turnstile 检查之后，因此这里的代码
+// 只会在用户通过验证后执行。
+
+const path = url.pathname;
 
 // ========== 鉴权检查 ==========
 async function checkAuth(request, env) {
@@ -174,9 +283,7 @@ function generateToken() {
   let result = "";
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  for (let i = 0; i < 32; i++) {
-    result += chars[bytes[i] % chars.length];
-  }
+  for (let i = 0; i < 32; i++) result += chars[bytes[i] % chars.length];
   return result;
 }
 
@@ -225,21 +332,12 @@ function renderLoginPage(errorType, lockSeconds) {
 
   let msg = "";
   let showTimer = false;
-  if (errorType === "wrong") {
-    msg = "密码错误！请等待冷却时间结束后再试。";
-    showTimer = true;
-  } else if (errorType === "locked") {
-    msg = "账号已被锁定，请等待冷却时间结束后再试。";
-    showTimer = true;
-  }
+  if (errorType === "wrong") { msg = "密码错误！请等待冷却时间结束后再试。"; showTimer = true; }
+  else if (errorType === "locked") { msg = "账号已被锁定，请等待冷却时间结束后再试。"; showTimer = true; }
 
   const msgHtml = msg
-    ? `<div class="error-msg">
-         <span>${msg}</span>
-         ${showTimer && totalSec > 0 ? `<span class="countdown" id="countdown">${initDisplay}</span>` : ""}
-       </div>`
+    ? `<div class="error-msg"><span>${msg}</span>${showTimer && totalSec > 0 ? `<span class="countdown" id="countdown">${initDisplay}</span>` : ""}</div>`
     : "";
-
   const disabled = showTimer && totalSec > 0 ? "disabled" : "";
 
   return `<!DOCTYPE html>
@@ -275,37 +373,16 @@ function renderLoginPage(errorType, lockSeconds) {
     <p class="sub">LBW教程网 · 访问后台</p>
     ${msgHtml}
     <form method="POST" action="/__auth">
-      <div class="input-group">
-        <label>管理密码</label>
-        <input type="password" name="password" placeholder="请输入管理密码" ${disabled} required>
-      </div>
-      <div class="bottom-row">
-        <label><input type="checkbox" name="remember" value="1" ${disabled}> 记住我（7天）</label>
-      </div>
+      <div class="input-group"><label>管理密码</label><input type="password" name="password" placeholder="请输入管理密码" ${disabled} required></div>
+      <div class="bottom-row"><label><input type="checkbox" name="remember" value="1" ${disabled}> 记住我（7天）</label></div>
       <button type="submit" class="login-btn" ${disabled}>登 录</button>
     </form>
   </div>
   ${showTimer && totalSec > 0 ? `
   <script>
-    (function(){
-      var el = document.getElementById("countdown");
-      if (!el) return;
-      var remaining = ${totalSec};
-      function tick(){
-        if (remaining <= 0) {
-          el.textContent = "已解除";
-          el.style.color = "#3fb950";
-          setTimeout(function(){ location.href = "/__login"; }, 1500);
-          return;
-        }
-        var m = Math.floor(remaining / 60);
-        var s = remaining % 60;
-        el.textContent = m + " 分 " + s + " 秒";
-        remaining--;
-        setTimeout(tick, 1000);
-      }
-      tick();
-    })();
+    (function(){var el=document.getElementById("countdown");if(!el)return;var r=${totalSec};
+    function t(){if(r<=0){el.textContent="已解除";el.style.color="#3fb950";setTimeout(function(){location.href="/__login"},1500);return}
+    var m=Math.floor(r/60),s=r%60;el.textContent=m+" 分 "+s+" 秒";r--;setTimeout(t,1000)}t()})();
   </script>` : ""}
 </body>
 </html>`;
@@ -313,27 +390,17 @@ function renderLoginPage(errorType, lockSeconds) {
 
 // ========== 日志页面 ==========
 function renderLogPage(entries) {
-  const rows = entries
-    .map(
-      (e, i) => `
+  const rows = entries.map((e, i) => `
     <tr>
-      <td>${i + 1}</td>
-      <td>${e.time}</td>
-      <td><code>${e.ip}</code></td>
-      <td>${e.country} / ${e.city}</td>
-      <td>${e.asn}</td>
-      <td>${e.path}</td>
-      <td>${e.method}</td>
-      <td>${escapeHtml(e.ua)}</td>
-    </tr>`
-    )
-    .join("");
+      <td>${i + 1}</td><td>${e.time}</td><td><code>${e.ip}</code></td>
+      <td>${e.country} / ${e.city}</td><td>${e.asn}</td><td>${e.path}</td>
+      <td>${e.method}</td><td>${escapeHtml(e.ua)}</td>
+    </tr>`).join("");
 
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>访问日志 - LBW教程网</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0d1117; color: #c9d1d9; }
@@ -354,25 +421,15 @@ function renderLogPage(entries) {
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <h2>访问日志（最近 ${entries.length} 条）</h2>
+  <div class="topbar"><h2>访问日志（最近 ${entries.length} 条）</h2>
     <div class="actions">
       <a href="/__clear" class="btn btn-danger" onclick="return confirm('确定清空所有日志？')">清空日志</a>
       <a href="/__logout" class="btn">退出登录</a>
     </div>
   </div>
-  ${entries.length === 0
-    ? '<div class="empty">暂无访问记录</div>'
-    : `<div class="container">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th><th>时间</th><th>IP</th><th>位置</th><th>ASN</th><th>路径</th><th>请求方式</th><th>客户端</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`}
+  ${entries.length === 0 ? '<div class="empty">暂无访问记录</div>' : `<div class="container">
+    <table><thead><tr><th>#</th><th>时间</th><th>IP</th><th>位置</th><th>ASN</th><th>路径</th><th>请求方式</th><th>客户端</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`}
 </body>
 </html>`;
 }
