@@ -259,13 +259,6 @@ function serveTurnstilePage(siteKey, redirectPath) {
 </html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
-// ========== 记录访问 ==========
-// （Turnstile 放到记录之前，确保记录的都是已验证通过的访问）
-// 注意：此处的 record 逻辑已移到前面 Turnstile 检查之后，因此这里的代码
-// 只会在用户通过验证后执行。
-
-const path = url.pathname;
-
 // ========== 鉴权检查 ==========
 async function checkAuth(request, env) {
   const token = getCookie(request, "admin_token");
