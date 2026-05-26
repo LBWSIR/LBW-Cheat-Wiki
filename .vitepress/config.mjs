@@ -1,4 +1,4 @@
-﻿// .vitepress/config.mjs
+// .vitepress/config.mjs
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
@@ -31,7 +31,6 @@ export default defineConfig({
         position: relative;
         display: inline-block;
         -webkit-user-drag: none !important; /* 禁止拖拽图片 */
-        pointer-events: none !important;    /* 禁止右键点击保存图片 */
       }
 
       /* 利用背景图片实现噪点干扰 (Base64 格式免去文件路径烦恼) */
