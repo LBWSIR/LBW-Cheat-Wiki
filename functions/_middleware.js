@@ -129,10 +129,11 @@ export async function onRequest(context) {
   // ========== Turnstile 人机验证（非管理员） ==========
   if (url.pathname.startsWith("/__")) return next();
 
-  // ========== 防爬虫 UA 拦截 ==========
+  // ========== 防爬虫：浏览器白名单拦截 ==========
   const ua = (request.headers.get("User-Agent") || "").toLowerCase();
-  const blockedAgents = ["python", "curl", "wget", "bot", "headlesschrome", "scrapy", "go-http-client", "java/", "node-fetch", "axios"];
-  if (blockedAgents.some(k => ua.includes(k))) {
+  const accept = request.headers.get("Accept") || "";
+  const isBrowser = /mozilla/i.test(ua) && accept.includes("text/html");
+  if (!isBrowser) {
     return new Response("Forbidden", { status: 403 });
   }
 
