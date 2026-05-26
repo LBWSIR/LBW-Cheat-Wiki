@@ -129,6 +129,11 @@ export async function onRequest(context) {
   // ========== Turnstile 人机验证（非管理员） ==========
   if (url.pathname.startsWith("/__")) return next();
 
+  // 静态资源放行（CSS/JS/图片等不需要验证，且 Accept 不是 text/html）
+  if (url.pathname.startsWith("/assets/") || /\.(js|css|png|jpg|webp|svg|ico|woff2?)$/i.test(url.pathname)) {
+    return next();
+  }
+
   // ========== 防爬虫：浏览器白名单拦截 ==========
   const ua = (request.headers.get("User-Agent") || "").toLowerCase();
   const accept = request.headers.get("Accept") || "";
@@ -146,11 +151,6 @@ export async function onRequest(context) {
   if (turnstileToken) {
     const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
     if (isValid) return next();
-  }
-
-  // 静态资源放行（验证页需要加载 Turnstile JS）
-  if (url.pathname.startsWith("/assets/") || /\.(js|css|png|jpg|webp|svg|ico|woff2?)$/i.test(url.pathname)) {
-    return next();
   }
 
   // 显示 Turnstile 验证页
