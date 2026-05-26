@@ -129,6 +129,13 @@ export async function onRequest(context) {
   // ========== Turnstile 人机验证（非管理员） ==========
   if (url.pathname.startsWith("/__")) return next();
 
+  // ========== 防爬虫 UA 拦截 ==========
+  const ua = (request.headers.get("User-Agent") || "").toLowerCase();
+  const blockedAgents = ["python", "curl", "wget", "bot", "headlesschrome", "scrapy", "go-http-client", "java/", "node-fetch", "axios"];
+  if (blockedAgents.some(k => ua.includes(k))) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   // 管理员无需验证
   const auth = await checkAuth(request, env);
   if (auth.ok) return next();
