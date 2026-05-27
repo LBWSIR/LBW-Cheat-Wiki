@@ -134,6 +134,25 @@ export async function onRequest(context) {
     return next();
   }
 
+  // ========== 记录访问日志 ==========
+  const entry = {
+    time: new Date().toISOString(),
+    ip: clientIP,
+    country: request.cf?.country || "",
+    city: request.cf?.city || "",
+    colo: request.cf?.colo || "",
+    asn: request.cf?.asn || "",
+    path: url.pathname,
+    method: request.method,
+    ua: request.headers.get("User-Agent") || "",
+    referer: request.headers.get("Referer") || ""
+  };
+  try {
+    await saveLog(env.DB, entry);
+  } catch (e) {
+    console.error("日志记录失败:", e);
+  }
+
   // ========== 防爬虫：浏览器白名单拦截 ==========
   const ua = (request.headers.get("User-Agent") || "").toLowerCase();
   const accept = request.headers.get("Accept") || "";
