@@ -135,23 +135,21 @@ export async function onRequest(context) {
   }
 
   // ========== 记录访问日志 ==========
-  const entry = {
-    time: new Date().toISOString(),
+  const rawUA = request.headers.get("User-Agent") || "";
+  const cf = request.cf || {};
+  const visitor = {
+    time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
     ip: clientIP,
-    country: request.cf?.country || "",
-    city: request.cf?.city || "",
-    colo: request.cf?.colo || "",
-    asn: request.cf?.asn || "",
-    path: url.pathname,
+    country: cf.country || "unknown",
+    city: cf.city || "unknown",
+    colo: cf.colo || "unknown",
+    asn: cf.asn || 0,
+    path: url.pathname + url.search,
     method: request.method,
-    ua: request.headers.get("User-Agent") || "",
-    referer: request.headers.get("Referer") || ""
+    ua: parseUA(rawUA),
+    referer: (request.headers.get("Referer") || "").slice(0, 200),
   };
-  try {
-    await saveLog(env.DB, entry);
-  } catch (e) {
-    console.error("日志记录失败:", e);
-  }
+  context.waitUntil(saveLog(env.DB, visitor));
 
   // ========== 防爬虫：浏览器白名单拦截 ==========
   const ua = (request.headers.get("User-Agent") || "").toLowerCase();
