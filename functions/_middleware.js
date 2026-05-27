@@ -134,8 +134,24 @@ export async function onRequest(context) {
     return next();
   }
 
-  // ========== 防爬虫：浏览器白名单拦截 ==========
+  // ========== 记录访问日志（实时，不阻塞） ==========
   const rawUA = request.headers.get("User-Agent") || "";
+  const cf = request.cf || {};
+  const visitor = {
+    time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+    ip: clientIP,
+    country: cf.country || "unknown",
+    city: cf.city || "unknown",
+    colo: cf.colo || "unknown",
+    asn: cf.asn || 0,
+    path: url.pathname + url.search,
+    method: request.method,
+    ua: parseUA(rawUA),
+    referer: (request.headers.get("Referer") || "").slice(0, 200),
+  };
+  context.waitUntil(saveLog(env.DB, visitor));
+
+  // ========== 防爬虫：浏览器白名单拦截 ==========
   const accept = request.headers.get("Accept") || "";
   const isBrowser = /mozilla/i.test(rawUA) && accept.includes("text/html");
   if (!isBrowser) {
@@ -144,47 +160,13 @@ export async function onRequest(context) {
 
   // 管理员无需验证
   const auth = await checkAuth(request, env);
-  if (auth.ok) {
-    // 记录管理员访问日志
-    const cf = request.cf || {};
-    const visitor = {
-      time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
-      ip: clientIP,
-      country: cf.country || "unknown",
-      city: cf.city || "unknown",
-      colo: cf.colo || "unknown",
-      asn: cf.asn || 0,
-      path: url.pathname + url.search,
-      method: request.method,
-      ua: parseUA(rawUA),
-      referer: (request.headers.get("Referer") || "").slice(0, 200),
-    };
-    context.waitUntil(saveLog(env.DB, visitor));
-    return next();
-  }
+  if (auth.ok) return next();
 
   // 已通过 Turnstile 验证
   const turnstileToken = getCookie(request, "turnstile");
   if (turnstileToken) {
     const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
-    if (isValid) {
-      // 记录普通访问日志
-      const cf = request.cf || {};
-      const visitor = {
-        time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
-        ip: clientIP,
-        country: cf.country || "unknown",
-        city: cf.city || "unknown",
-        colo: cf.colo || "unknown",
-        asn: cf.asn || 0,
-        path: url.pathname + url.search,
-        method: request.method,
-        ua: parseUA(rawUA),
-        referer: (request.headers.get("Referer") || "").slice(0, 200),
-      };
-      context.waitUntil(saveLog(env.DB, visitor));
-      return next();
-    }
+    if (isValid) return next();
   }
 
   // 显示 Turnstile 验证页
