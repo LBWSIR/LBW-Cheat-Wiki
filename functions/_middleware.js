@@ -126,6 +126,28 @@ export async function onRequest(context) {
     return handleTurnstileVerify(request, env);
   }
 
+  // ========== SPA 前端 pageview 上报（记录站内导航） ==========
+  if (url.pathname === "/__pv") {
+    const pvPath = url.searchParams.get("path") || "";
+    const pvRef = url.searchParams.get("ref") || "";
+    const pvUA = request.headers.get("User-Agent") || "";
+    const pvCF = request.cf || {};
+    const pvEntry = {
+      time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+      ip: clientIP,
+      country: pvCF.country || "unknown",
+      city: pvCF.city || "unknown",
+      colo: pvCF.colo || "unknown",
+      asn: pvCF.asn || 0,
+      path: pvPath,
+      method: "SPA",
+      ua: parseUA(pvUA),
+      referer: pvRef.slice(0, 200),
+    };
+    context.waitUntil(saveLog(env.DB, pvEntry));
+    return new Response("ok", { headers: { "Content-Type": "text/plain" } });
+  }
+
   // ========== Turnstile 人机验证（非管理员） ==========
   if (url.pathname.startsWith("/__")) return next();
 
