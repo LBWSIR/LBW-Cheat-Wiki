@@ -160,6 +160,11 @@ export async function onRequest(context) {
   // ========== 防爬虫：ASN 封禁 VPS/IDC 提供商 ==========
   if (url.pathname.startsWith("/__")) return next();
 
+  // 静态资源放行（JS/CSS/图片/字体不能被拦截，否则页面无法渲染）
+  if (url.pathname.startsWith("/assets/") || /\.(js|css|png|jpg|webp|svg|ico|woff2?)$/i.test(url.pathname)) {
+    return next();
+  }
+
   // 管理员无条件放行
   const auth = await checkAuth(request, env);
   if (auth.ok) return next();
