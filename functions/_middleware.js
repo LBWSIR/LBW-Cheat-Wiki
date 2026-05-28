@@ -118,6 +118,14 @@ export async function onRequest(context) {
     return Response.redirect("/__logs", 302);
   }
 
+  // ========== Turnstile 验证回调（仅速率超标时触发） ==========
+  if (url.pathname === "/__turnstile-verify") {
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    return handleTurnstileVerify(request, env);
+  }
+
   // ========== SPA 前端 pageview 上报（记录站内导航） ==========
   if (url.pathname === "/__pv") {
     const pvPath = url.searchParams.get("path") || "";
@@ -169,7 +177,7 @@ export async function onRequest(context) {
   const auth = await checkAuth(request, env);
   if (auth.ok) return next();
 
-  // 封禁常见 VPS/云服务器 ASN（这些 IP 不会是普通用户）
+  // 第一层：封禁常见 VPS/云服务器 ASN（这些 IP 不会是普通用户）
   const BLOCKED_ASNS = [16509, 14061, 51167, 64286];
   if (BLOCKED_ASNS.includes(cf.asn)) {
     return new Response("Forbidden", { status: 403 });
@@ -182,7 +190,144 @@ export async function onRequest(context) {
     return new Response("Forbidden", { status: 403 });
   }
 
+  // 第二层：速率限制（同 IP 超过阈值弹出 Turnstile 挑战）
+  const RATE_LIMIT = 30; // 每分钟最多 30 次
+  const RATE_WINDOW = 60; // 窗口 60 秒
+
+  // 确保表存在
+  await env.DB.prepare(
+    "CREATE TABLE IF NOT EXISTS request_counts (ip TEXT PRIMARY KEY, count INTEGER, window_start INTEGER)"
+  ).run();
+
+  const now = Math.floor(Date.now() / 1000);
+  const record = await env.DB.prepare(
+    "SELECT * FROM request_counts WHERE ip = ?"
+  ).bind(clientIP).first();
+
+  if (!record || now - record.window_start > RATE_WINDOW) {
+    // 新窗口，重置计数
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO request_counts (ip, count, window_start) VALUES (?, 1, ?)"
+    ).bind(clientIP, now).run();
+  } else if (record.count >= RATE_LIMIT) {
+    // 超频 → 弹出 Turnstile 挑战
+    const turnstileToken = getCookie(request, "turnstile");
+    if (turnstileToken) {
+      const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
+      if (isValid) return next();
+    }
+    return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
+  } else {
+    // 窗口内计数 +1
+    await env.DB.prepare(
+      "UPDATE request_counts SET count = count + 1 WHERE ip = ?"
+    ).bind(clientIP).run();
+  }
+
   return next();
+}
+
+// ========== Turnstile 验证处理 ==========
+async function handleTurnstileVerify(request, env) {
+  const text = await request.text();
+  const params = new URLSearchParams(text);
+  const token = params.get("cf-turnstile-response") || "";
+  const redirectUrl = params.get("redirect") || "/";
+
+  const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: token }),
+  });
+  const outcome = await result.json();
+
+  if (outcome.success) {
+    const cookieValue = await signTurnstileCookie(env.TURNSTILE_SECRET);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        "Location": redirectUrl,
+        "Set-Cookie": `turnstile=${cookieValue}; Path=/; Max-Age=86400; SameSite=Lax; HttpOnly; Secure`,
+      },
+    });
+  }
+
+  return new Response("验证失败，请刷新重试", { status: 403 });
+}
+
+// ========== Turnstile Cookie 签名/验证 ==========
+async function signTurnstileCookie(secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const payload = `ok:${Date.now()}`;
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return `${payload}.${btoa(String.fromCharCode(...new Uint8Array(sig)))}`;
+}
+
+async function verifyTurnstileCookie(secret, cookieValue) {
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const [payload, sig] = cookieValue.split(".");
+    if (!payload || !sig) return false;
+    const expectedSig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)))));
+    return sig === expectedSig;
+  } catch {
+    return false;
+  }
+}
+
+// ========== Turnstile 验证页面 ==========
+function serveTurnstilePage(siteKey, redirectPath) {
+  const safe = escapeHtml(redirectPath);
+  return new Response(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LBW教程网 - 人机验证</title>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0d1117; display: flex; justify-content: center; align-items: center; min-height: 100vh; user-select: none; }
+  .verify-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 48px 40px; text-align: center; max-width: 420px; width: 90%; }
+  .verify-box h1 { color: #c9d1d9; font-size: 22px; margin-bottom: 10px; }
+  .verify-box p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+  .turnstile-wrapper { display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="verify-box">
+    <h1>LBW教程网</h1>
+    <p>检测到异常访问频率，请完成人机验证</p>
+    <div class="turnstile-wrapper">
+      <div class="cf-turnstile" data-sitekey="${siteKey}" data-theme="dark"></div>
+    </div>
+  </div>
+  <script>
+    window.onTurnstileLoad = function() {
+      if (window.turnstile) {
+        window.turnstile.render('.cf-turnstile', {
+          sitekey: '${siteKey}',
+          theme: 'dark',
+          callback: function(token) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/__turnstile-verify';
+            form.style.display = 'none';
+            var t = document.createElement('input');
+            t.name = 'cf-turnstile-response'; t.value = token; form.appendChild(t);
+            var r = document.createElement('input');
+            r.name = 'redirect'; r.value = '${safe}'; form.appendChild(r);
+            document.body.appendChild(form);
+            form.submit();
+          }
+        });
+      }
+    };
+  </script>
+</body>
+</html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
 // ========== 鉴权检查 ==========
