@@ -1,9 +1,9 @@
 /**
- * Cloudflare Pages Functions - 管理员后台 + ASN 封禁防爬虫
+ * Cloudflare Pages Functions - 管理员后台 + 双层防爬虫
+ * - 第一层：ASN 封禁 VPS/IDC 提供商 + 非浏览器拦截
+ * - 第二层：Turnstile 人机验证（首次访问一次，24h Cookie 免验）
  * - 使用 D1 替代 KV，免费额度 10 万次写入/天
- * - Cookie 使用随机 token 而非明文密码
  * - 登录频率限制：3 次错误后逐级锁定时长
- * - 封禁 VPS/IDC 提供商 ASN，拦截无头浏览器/脚本
  */
 
 export async function onRequest(context) {
@@ -190,41 +190,17 @@ export async function onRequest(context) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  // 第二层：速率限制（同 IP 超过阈值弹出 Turnstile 挑战）
-  const RATE_LIMIT = 30; // 每分钟最多 30 次
-  const RATE_WINDOW = 60; // 窗口 60 秒
-
-  // 确保表存在
-  await env.DB.prepare(
-    "CREATE TABLE IF NOT EXISTS request_counts (ip TEXT PRIMARY KEY, count INTEGER, window_start INTEGER)"
-  ).run();
-
-  const now = Math.floor(Date.now() / 1000);
-  const record = await env.DB.prepare(
-    "SELECT * FROM request_counts WHERE ip = ?"
-  ).bind(clientIP).first();
-
-  if (!record || now - record.window_start > RATE_WINDOW) {
-    // 新窗口，重置计数
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO request_counts (ip, count, window_start) VALUES (?, 1, ?)"
-    ).bind(clientIP, now).run();
-  } else if (record.count >= RATE_LIMIT) {
-    // 超频 → 弹出 Turnstile 挑战
-    const turnstileToken = getCookie(request, "turnstile");
-    if (turnstileToken) {
-      const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
-      if (isValid) return next();
-    }
-    return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
-  } else {
-    // 窗口内计数 +1
-    await env.DB.prepare(
-      "UPDATE request_counts SET count = count + 1 WHERE ip = ?"
-    ).bind(clientIP).run();
+  // 第二层：Turnstile 人机验证（首次访问挑战一次，24h 免验）
+  // 已通过 Turnstile 验证的放行
+  const turnstileToken = getCookie(request, "turnstile");
+  if (turnstileToken) {
+    const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
+    if (isValid) return next();
   }
 
-  return next();
+  // 新访客 → 弹出 Turnstile 验证页
+  return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
+}
 }
 
 // ========== Turnstile 验证处理 ==========
