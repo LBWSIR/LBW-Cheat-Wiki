@@ -201,7 +201,6 @@ export async function onRequest(context) {
   // 新访客 → 弹出 Turnstile 验证页
   return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
 }
-}
 
 // ========== Turnstile 验证处理 ==========
 async function handleTurnstileVerify(request, env) {
