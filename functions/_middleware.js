@@ -123,7 +123,7 @@ export async function onRequest(context) {
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405 });
     }
-    return handleTurnstileVerify(request, env);
+    return handleTurnstileVerify(request, env, context);
   }
 
   // ========== SPA 前端 pageview 上报（记录站内导航） ==========
@@ -238,7 +238,7 @@ export async function onRequest(context) {
 }
 
 // ========== Turnstile 验证处理 ==========
-async function handleTurnstileVerify(request, env) {
+async function handleTurnstileVerify(request, env, context) {
   const text = await request.text();
   const params = new URLSearchParams(text);
   const token = params.get("cf-turnstile-response") || "";
