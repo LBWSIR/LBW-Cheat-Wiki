@@ -148,6 +148,17 @@ export async function onRequest(context) {
     return new Response("ok", { headers: { "Content-Type": "text/plain" } });
   }
 
+  // ========== IP 黑名单拦截 ==========
+  const blockedIPs = [
+    "34.11.194.51",       // WordPress 漏洞扫描 (Google Cloud)
+    "195.178.110.241",    // Git .git/config 探测
+    "74.7.230.26",        // robots.txt 爬虫探测
+    "74.7.227.128",       // 可疑爬虫
+  ];
+  if (blockedIPs.includes(clientIP)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   // ========== 记录访问日志（实时，不阻塞） ==========
   const rawUA = request.headers.get("User-Agent") || "";
   const cf = request.cf || {};
@@ -261,44 +272,33 @@ function serveTurnstilePage(siteKey, redirectPath) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LBW教程网 - 人机验证</title>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: #0d1117; display: flex; justify-content: center; align-items: center; min-height: 100vh; user-select: none; }
   .verify-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 48px 40px; text-align: center; max-width: 420px; width: 90%; }
   .verify-box h1 { color: #c9d1d9; font-size: 22px; margin-bottom: 10px; }
   .verify-box p { color: #8b949e; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
-  .turnstile-wrapper { display: inline-block; }
 </style>
 </head>
 <body>
   <div class="verify-box">
     <h1>LBW教程网</h1>
-    <p>检测到异常访问频率，请完成人机验证</p>
-    <div class="turnstile-wrapper">
-      <div class="cf-turnstile" data-sitekey="${siteKey}" data-theme="dark"></div>
-    </div>
+    <p>正在验证您的访问身份，请稍候...</p>
+    <div class="cf-turnstile" data-sitekey="${siteKey}" data-theme="dark" data-callback="onVerify"></div>
   </div>
   <script>
-    window.onTurnstileLoad = function() {
-      if (window.turnstile) {
-        window.turnstile.render('.cf-turnstile', {
-          sitekey: '${siteKey}',
-          theme: 'dark',
-          callback: function(token) {
-            var form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/__turnstile-verify';
-            form.style.display = 'none';
-            var t = document.createElement('input');
-            t.name = 'cf-turnstile-response'; t.value = token; form.appendChild(t);
-            var r = document.createElement('input');
-            r.name = 'redirect'; r.value = '${safe}'; form.appendChild(r);
-            document.body.appendChild(form);
-            form.submit();
-          }
-        });
-      }
+    window.onVerify = function(token) {
+      var form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/__turnstile-verify';
+      form.style.display = 'none';
+      var t = document.createElement('input');
+      t.name = 'cf-turnstile-response'; t.value = token; form.appendChild(t);
+      var r = document.createElement('input');
+      r.name = 'redirect'; r.value = '${safe}'; form.appendChild(r);
+      document.body.appendChild(form);
+      form.submit();
     };
   </script>
 </body>
