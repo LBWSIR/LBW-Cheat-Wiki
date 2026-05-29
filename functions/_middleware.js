@@ -213,7 +213,7 @@ export async function onRequest(context) {
   if (auth.ok) return next();
 
   // Preview 部署跳过反爬（Turnstile 不支持通配符，preview 域名为随机 hash）
-  if (url.hostname !== "lbw-wiki.pages.dev") return next();
+  if (url.hostname !== "lbw-wiki.pages.dev") return injectAntiCopy(await next());
 
   // 第一层：封禁常见 VPS/云服务器 ASN（这些 IP 不会是普通用户）
   const BLOCKED_ASNS = [16509, 14061, 51167, 64286];
@@ -233,11 +233,36 @@ export async function onRequest(context) {
   const turnstileToken = getCookie(request, "turnstile");
   if (turnstileToken) {
     const isValid = await verifyTurnstileCookie(env.TURNSTILE_SECRET, turnstileToken);
-    if (isValid) return next();
+    if (isValid) return injectAntiCopy(await next());
   }
 
   // 新访客 → 弹出 Turnstile 验证页
   return serveTurnstilePage(env.TURNSTILE_SITE_KEY, url.pathname + url.search);
+}
+
+// ========== 注入反盗用脚本（阻止 Ctrl+S / 右键 / F12） ==========
+async function injectAntiCopy(response) {
+  const ct = response.headers.get("Content-Type") || "";
+  if (!ct.includes("text/html")) return response;
+
+  const html = await response.text();
+  const script = `<script>
+(function(){
+  var msg="内容受版权保护，禁止此操作";
+  document.addEventListener("contextmenu",function(e){e.preventDefault()});
+  document.addEventListener("keydown",function(e){
+    if(e.ctrlKey&&e.key==="s"){e.preventDefault();alert(msg)}
+    if(e.ctrlKey&&e.key==="u"){e.preventDefault()}
+    if(e.key==="F12"){e.preventDefault()}
+    if(e.ctrlKey&&e.shiftKey&&e.key==="I"){e.preventDefault()}
+  });
+})();
+</script>`;
+  const injected = html.replace("</body>", script + "</body>");
+  return new Response(injected, {
+    status: response.status,
+    headers: response.headers,
+  });
 }
 
 // ========== Turnstile 验证处理 ==========
