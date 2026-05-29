@@ -159,6 +159,30 @@ export async function onRequest(context) {
     return new Response("Forbidden", { status: 403 });
   }
 
+  // ========== 路径黑名单（拦截已知漏洞扫描） ==========
+  const blockedPatterns = [
+    /\.git\//,            // Git 仓库探测
+    /\/wp-/i,             // WordPress 路径 (wp-includes, wp-admin 等)
+    /\/xmlrpc\.php/i,     // WordPress XML-RPC
+    /\/wlwmanifest/i,     // Windows Live Writer
+    /\/\.env$/i,          // 环境变量泄露
+    /\/\.aws\//i,         // AWS 凭证探测
+    /\/\.ssh\//i,         // SSH 密钥探测
+    /\/phpunit/i,         // PHPUnit 漏洞
+    /\/vendor\//i,        // Composer vendor 目录
+    /\/\.DS_Store/i,      // macOS 文件泄露
+    /\/actuator\//i,      // Spring Boot Actuator
+    /\/wp-content\//i,    // WordPress 内容目录
+    /\/wp-json\//i,       // WordPress REST API
+    /\/wp-login/i,        // WordPress 登录页
+    /\/sitemap\.xml/i,    // 站点地图探测
+  ];
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(url.pathname)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  }
+
   // ========== 记录访问日志（实时，不阻塞） ==========
   const rawUA = request.headers.get("User-Agent") || "";
   const cf = request.cf || {};
@@ -237,6 +261,21 @@ async function handleTurnstileVerify(request, env) {
       },
     });
   }
+
+  // 验证失败 → 记录详细原因到日志
+  const cf2 = request.cf || {};
+  context.waitUntil(saveLog(env.DB, {
+    time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+    ip: request.headers.get("CF-Connecting-IP") || "unknown",
+    country: cf2.country || "unknown",
+    city: cf2.city || "unknown",
+    colo: cf2.colo || "unknown",
+    asn: cf2.asn || 0,
+    path: "/__turnstile-verify [FAIL]",
+    method: "POST",
+    ua: parseUA(request.headers.get("User-Agent") || ""),
+    referer: JSON.stringify(outcome).slice(0, 200),
+  }));
 
   return new Response("验证失败，请刷新重试", { status: 403 });
 }
