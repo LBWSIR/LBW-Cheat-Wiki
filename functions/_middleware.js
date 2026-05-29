@@ -148,6 +148,24 @@ export async function onRequest(context) {
     return new Response("ok", { headers: { "Content-Type": "text/plain" } });
   }
 
+  // ========== 蜜罐陷阱：爬虫扫 DOM 会误触，真人/正常浏览器不会点 ==========
+  if (url.pathname === "/__honey") {
+    await env.VISITOR_LOG.put(`honey:${clientIP}`, "1", { expirationTtl: 86400 * 90 });
+    context.waitUntil(saveLog(env.DB, {
+      time: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+      ip: clientIP,
+      country: cf.country || "unknown",
+      city: cf.city || "unknown",
+      colo: cf.colo || "unknown",
+      asn: cf.asn || 0,
+      path: "/__honey [TRAPPED]",
+      method: request.method,
+      ua: parseUA(request.headers.get("User-Agent") || ""),
+      referer: (request.headers.get("Referer") || "").slice(0, 200),
+    }));
+    return new Response("Forbidden", { status: 403 });
+  }
+
   // ========== IP 黑名单拦截 ==========
   const blockedIPs = [
     "34.11.194.51",       // WordPress 漏洞扫描 (Google Cloud)
@@ -156,6 +174,12 @@ export async function onRequest(context) {
     "74.7.227.128",       // 可疑爬虫
   ];
   if (blockedIPs.includes(clientIP)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  // 检查 KV 蜜罐黑名单（被蜜罐捕获过的 IP）
+  const isHoneyTrapped = await env.VISITOR_LOG.get(`honey:${clientIP}`);
+  if (isHoneyTrapped) {
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -246,7 +270,8 @@ async function injectAntiCopy(response) {
   if (!ct.includes("text/html")) return response;
 
   const html = await response.text();
-  const script = `<script>
+  const script = `<a href="/__honey" style="display:none;position:absolute;left:-9999px" aria-hidden="true" tabindex="-1"></a>
+<script>
 (function(){
   var msg="内容受版权保护，禁止此操作";
   document.addEventListener("contextmenu",function(e){e.preventDefault()});
