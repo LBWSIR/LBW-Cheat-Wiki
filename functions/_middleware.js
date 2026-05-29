@@ -212,6 +212,9 @@ export async function onRequest(context) {
   const auth = await checkAuth(request, env);
   if (auth.ok) return next();
 
+  // Preview 部署跳过反爬（Turnstile 不支持通配符，preview 域名为随机 hash）
+  if (url.hostname !== "lbw-wiki.pages.dev") return next();
+
   // 第一层：封禁常见 VPS/云服务器 ASN（这些 IP 不会是普通用户）
   const BLOCKED_ASNS = [16509, 14061, 51167, 64286];
   if (BLOCKED_ASNS.includes(cf.asn)) {
