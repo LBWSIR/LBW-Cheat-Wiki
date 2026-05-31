@@ -203,6 +203,8 @@ export async function onRequest(context) {
   ];
   for (const pattern of blockedPatterns) {
     if (pattern.test(url.pathname)) {
+      // 自动封禁该 IP 30 天
+      context.waitUntil(env.VISITOR_LOG.put(`honey:${clientIP}`, "1", { expirationTtl: 86400 * 30 }));
       return new Response("Forbidden", { status: 403 });
     }
   }
