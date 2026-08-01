@@ -1,4 +1,4 @@
-﻿// .vitepress/config.mjs
+// .vitepress/config.mjs
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
@@ -31,7 +31,6 @@ export default defineConfig({
         position: relative;
         display: inline-block;
         -webkit-user-drag: none !important; /* 禁止拖拽图片 */
-        pointer-events: none !important;    /* 禁止右键点击保存图片 */
       }
 
       /* 利用背景图片实现噪点干扰 (Base64 格式免去文件路径烦恼) */
@@ -410,6 +409,19 @@ export default defineConfig({
                       { text: 'Meow 常见问题', link: '/mingchao/meow_faq' }
                     ]
                   }
+                ]
+              },
+              // --- TBH 教程 ---
+              {
+                text: 'TBH 教程',
+                collapsed: true,
+                link: '/tbh',
+                items: [
+                  { text: '观星教程', link: '/tbh/guansing' },
+                  { text: '祈祷术教程', link: '/tbh/qidaoshu' },
+                  { text: '存档编辑器教程', link: '/tbh/cundang_editor' },
+                  { text: '挂机助手教程', link: '/tbh/guaji_assist' },
+                  { text: '多开教程', link: '/tbh/duokai' }
                 ]
               }
             ]
