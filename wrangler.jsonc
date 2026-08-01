@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lbw",
+  "compatibility_date": "2026-05-23",
+  "assets": {
+    "directory": ".vitepress/dist"
+  },
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "visitors",
+      "database_id": "c2b2622d-f470-4364-ace4-8fa2f48b58fd"
+    }
+  ]
+}
