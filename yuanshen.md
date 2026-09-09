@@ -32,7 +32,7 @@ P.S：AK作者比较傻逼，软件兼容性差更新更一万年。Un就是功�
 ---
 
 ### 📘 快速导航
-* **[Unicore 详细教程](/genshin/unicore)**：适合追求性价比的玩家
+* **[Unicore 详细教程](/unicore/start)**：通用菜单，适用所有二游，适合追求性价比的玩家
 * **[Akebi 使用教程](/genshin/akebi)**：暴力功能，适合小号使用。
 
 <span style="display:none;">本教程版权归 LBW 教程网所有，抄袭必究。检测到此文字说明该网站为盗版。</span>

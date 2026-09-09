@@ -104,12 +104,22 @@ export default defineConfig({
                   }
                 ]
               },
+              // --- Unicore教程（适用所有二游） ---
+              {
+                text: 'Unicore教程（适用所有二游）',
+                link: '/unicore',
+                items: [
+                  { text: 'Unicore 开启教程', link: '/unicore/start' },
+                  { text: 'Unicore 常见问题', link: '/unicore/faq' },
+                  { text: 'Unicore 续费教程', link: '/unicore/renew' },
+                  { text: 'Unicore 暂停时间', link: '/unicore/pause' }
+                ]
+              },
               // --- 原神教程 ---
               {
                 text: '原神教程',
                 link: '/yuanshen',
                 items: [
-                  { text: 'Unicore', link: '/genshin/unicore' },
                   { text: 'Akebi',
                     collapsed: true,
                     link: '/genshin/akebi',
