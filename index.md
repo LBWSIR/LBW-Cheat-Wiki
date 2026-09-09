@@ -23,8 +23,6 @@ hero:
 
 <mark style="color:red;">**主站:https://lbw-wiki.pages.dev/ 国内外可访问！优先更新同步此网站**</mark>
 
-<mark style="color:red;">**备用站:https://lbw-wiki.vercel.app/ 内地无法访问！！只有海外IP可以访问！！**</mark>
-
 本站教程建立于26年4月，更新较为缓慢，依旧看着来随缘更新
 
 

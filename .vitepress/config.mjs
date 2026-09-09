@@ -1,4 +1,4 @@
-﻿// .vitepress/config.mjs
+// .vitepress/config.mjs
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
@@ -31,7 +31,6 @@ export default defineConfig({
         position: relative;
         display: inline-block;
         -webkit-user-drag: none !important; /* 禁止拖拽图片 */
-        pointer-events: none !important;    /* 禁止右键点击保存图片 */
       }
 
       /* 利用背景图片实现噪点干扰 (Base64 格式免去文件路径烦恼) */
@@ -105,12 +104,22 @@ export default defineConfig({
                   }
                 ]
               },
+              // --- Unicore教程（适用所有二游） ---
+              {
+                text: 'Unicore教程（适用所有二游）',
+                link: '/unicore',
+                items: [
+                  { text: 'Unicore 开启教程', link: '/unicore/start' },
+                  { text: 'Unicore 常见问题', link: '/unicore/faq' },
+                  { text: 'Unicore 续费教程', link: '/unicore/renew' },
+                  { text: 'Unicore 暂停时间', link: '/unicore/pause' }
+                ]
+              },
               // --- 原神教程 ---
               {
                 text: '原神教程',
                 link: '/yuanshen',
                 items: [
-                  { text: 'Unicore', link: '/genshin/unicore' },
                   { text: 'Akebi',
                     collapsed: true,
                     link: '/genshin/akebi',
@@ -410,6 +419,19 @@ export default defineConfig({
                       { text: 'Meow 常见问题', link: '/mingchao/meow_faq' }
                     ]
                   }
+                ]
+              },
+              // --- TBH 教程 ---
+              {
+                text: 'TBH 教程',
+                collapsed: true,
+                link: '/tbh',
+                items: [
+                  { text: '观星教程', link: '/tbh/guansing' },
+                  { text: '祈祷术教程', link: '/tbh/qidaoshu' },
+                  { text: '存档编辑器教程', link: '/tbh/cundang_editor' },
+                  { text: '挂机助手教程', link: '/tbh/guaji_assist' },
+                  { text: '多开教程', link: '/tbh/duokai' }
                 ]
               }
             ]
