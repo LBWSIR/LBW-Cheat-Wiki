@@ -418,7 +418,8 @@ export default defineConfig({
                       { text: 'Meow 功能图', link: '/mingchao/meow_features' },
                       { text: 'Meow 常见问题', link: '/mingchao/meow_faq' }
                     ]
-                  }
+                  },
+                  { text: 'MT-MC（DC）教程', link: '/mingchao/mtmc' }
                 ]
               },
               // --- TBH 教程 ---

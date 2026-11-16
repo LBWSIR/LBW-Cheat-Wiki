@@ -9,3 +9,4 @@
 ---
 
 * [Meow 使用教程](/mingchao/meow)
+* [MT-MC（DC）教程](/mingchao/mtmc)
