@@ -2,4 +2,4 @@
 
 旨在教导菜鸟正确的入门理解各个Cheat的功能及作用
 
-网站https://lbw-wiki.vercel.app/
+网站[https://lbw-wiki.vercel.app/](https://lbw-wiki.pages.dev/)
